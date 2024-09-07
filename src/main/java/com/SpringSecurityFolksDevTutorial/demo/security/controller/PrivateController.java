@@ -7,15 +7,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/private")
+ @RequestMapping("/private")
 public class PrivateController {
 
     @GetMapping
     public String helloWorld() {
         return "Hello! PRIVATE";
     }
-
-    @PreAuthorize(value = "hasRole(`ADMIN`)")
+//
+//    @PreAuthorize(value = "hasRole(`ADMIN`)")
     @GetMapping("/admin")
     public String helloWorldUser() {
         return "Hello! ADMIN PRIVATE";

@@ -105,3 +105,242 @@ public SecurityFilterChain filterChain(HttpSecurity security) throws Exception {
 
 This setup is useful for a simple API or application that doesn't require complex authentication mechanisms but still enforces basic security measures.
 
+## SECTION 2 - BASIC AUTH
+
+### `User` Entity
+
+The `User` class represents a user in the application and is annotated as a JPA entity, mapped to the `users` table in the database.
+
+```java
+@Entity
+@Table(name = "users")
+public class User implements UserDetails {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private String username;
+    private String password;
+
+    public User() {
+    }
+
+    public User(Long id, String name, String username, String password) {
+        this.id = id;
+        this.name = name;
+        this.username = username;
+        this.password = password;
+    }
+
+    // Constructor without id (for new user creation)
+    public User(String name, String username, String password) {
+        this.name = name;
+        this.username = username;
+        this.password = password;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(
+                new SimpleGrantedAuthority("ROLE_USER"),
+                new SimpleGrantedAuthority("ROLE_ADMIN")
+        );
+    }
+
+    @Override
+    public String getPassword() {
+        return password ;
+    }
+
+    @Override
+    public String getUsername() {
+        return username;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+}
+```
+
+**Explanation**:
+- **Annotations**:
+   - `@Entity`: Marks the class as a JPA entity.
+   - `@Table(name = "users")`: Specifies the table in the database.
+   - `@Id`: Marks the `id` field as the primary key.
+   - `@GeneratedValue(strategy = GenerationType.IDENTITY)`: Automatically generates the primary key value.
+
+- **Fields**:
+   - `id`: Unique identifier for the user.
+   - `name`, `username`, `password`: Other user details.
+
+- **Constructors**:
+   - No-argument constructor required by Hibernate.
+   - Constructors with parameters for initializing fields.
+
+- **Methods**:
+   - Implements `UserDetails` for Spring Security, providing user authorities, password, and account status.
+
+---
+
+### `UserDetailsService`
+
+The `UserDetailsService` class is a Spring Security service that loads user-specific data.
+
+```java
+@Service
+public class UserDetailsService implements org.springframework.security.core.userdetails.UserDetailsService {
+    private final UserService userService;
+
+    public UserDetailsService(UserService userService) {
+        this.userService = userService;
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        Optional<User> user = userService.getByUsername(username);
+
+        return user.orElseThrow(() -> new UsernameNotFoundException("User not found"));
+    }
+}
+```
+
+**Explanation**:
+- **Class**:
+   - Annotated with `@Service` to designate it as a Spring service component.
+
+- **Constructor**:
+   - Takes a `UserService` instance to interact with the user repository.
+
+- **Method**:
+   - `loadUserByUsername(String username)`: Fetches user details by username. If the user is not found, it throws `UsernameNotFoundException`. This method is used by Spring Security during authentication to load user-specific data.
+
+---
+
+### `UserService`
+
+The `UserService` class handles operations related to user management, including user creation and retrieval.
+
+```java
+@Service
+public class UserService {
+
+    private final UserRepository userRepository;
+    private final BCryptPasswordEncoder bCryptPasswordEncoder;
+
+    public UserService(UserRepository userRepository, BCryptPasswordEncoder bCryptPasswordEncoder) {
+        this.userRepository = userRepository;
+        this.bCryptPasswordEncoder = bCryptPasswordEncoder;
+    }
+
+    public Optional<User> getByUsername(String username) {
+        return userRepository.findByUsername(username);
+    }
+
+    public User createUser(CreateUserRequest request) {
+        User user = new User(request.name(), request.username(), bCryptPasswordEncoder.encode(request.password()));
+        userRepository.save(user);
+        return user;
+    }
+}
+```
+
+**Explanation**:
+- **Class**:
+   - Annotated with `@Service` to indicate that it is a Spring service component.
+
+- **Fields**:
+   - `userRepository`: Interface for database operations related to users.
+   - `bCryptPasswordEncoder`: Used for encoding user passwords securely.
+
+- **Methods**:
+   - `getByUsername(String username)`: Retrieves a user by username from the repository. Returns an `Optional<User>`.
+   - `createUser(CreateUserRequest request)`: Creates a new user, encodes the password using `BCryptPasswordEncoder`, and saves the user to the repository.
+
+---
+
+### Basic Authentication Flow
+
+Here’s a high-level overview of how basic authentication works in this application:
+
+1. **User Registration**:
+   - The user submits a registration form with their name, username, and password.
+   - The `UserService` receives this information, encodes the password, and saves the new user to the database.
+
+2. **User Login**:
+   - When the user attempts to log in, Spring Security uses the `UserDetailsService` to fetch user details by username.
+   - `UserDetailsService` calls `UserService` to retrieve the user.
+   - The user details, including the encoded password, are returned and used to authenticate the user.
+
+3. **Authentication**:
+   - Spring Security compares the submitted password with the encoded password stored in the database.
+   - If they match, the user is authenticated and granted access to protected resources.
+
+**Diagram**:
+
+```plaintext
++------------------+         +--------------------+         +------------------+
+|  User Registration| -----> |     User Service   | -----> |    User Repository |
++------------------+         +--------------------+         +------------------+
+                                  |
+                                  v
+                         +---------------------+
+                         |  BCryptPasswordEncoder |
+                         +---------------------+
+
++------------------+         +--------------------+         +------------------+
+|    User Login    | -----> | UserDetailsService | -----> |   User Service   |
++------------------+         +--------------------+         +------------------+
+                                  |
+                                  v
+                         +---------------------+
+                         |     User Repository    |
+                         +---------------------+
+```
+
+- **User Registration**: User data is saved with encrypted password.
+- **User Login**: User is authenticated using the provided credentials compared against the stored data.
+
+This diagram represents the flow from user registration to login and authentication, demonstrating how the different components interact in the process.
